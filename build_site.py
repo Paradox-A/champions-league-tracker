@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from collections import defaultdict
 
 API_TOKEN = os.environ.get("FOOTBALL_DATA_API_TOKEN")
@@ -16,6 +16,20 @@ table = standings_data["standings"][0]["table"]
 season = standings_data["season"]
 matchday = season["currentMatchday"]
 table = sorted(table, key=lambda t: (t["position"], -t["points"], -t["goalDifference"]))
+
+# football-data.org's /standings endpoint silently falls back to the last
+# season it has fixture data for when the current season hasn't been loaded
+# yet (e.g. right after a league-phase draw, before the fixture list is
+# published). Detect that case rather than presenting a past season as current.
+season_end = date.fromisoformat(season["endDate"])
+STALE_SEASON = season_end < date.today()
+STALE_BANNER = ""
+if STALE_SEASON:
+    season_label = f"{season['startDate'][:4]}-{season['endDate'][2:4]}"
+    STALE_BANNER = f"""
+    <div class="explainer" style="background: var(--out); color: var(--out-text); font-weight: 600;">
+      ⚠ The 2026-27 Champions League league phase hasn't started yet, and its fixtures aren't loaded into the free data source this tracker uses. Everything below is the final {season_label} table (last completed season), shown for reference only — not current results. This will update automatically once 2026-27 matches are fetched.
+    </div>"""
 
 matches_data = json.load(open(MATCHES_PATH))
 finished = [m for m in matches_data["matches"] if m["status"] == "FINISHED"]
@@ -279,7 +293,8 @@ html = f"""<!doctype html>
 <div class="wrap">
   <div class="dash-link"><a href="https://paradox-a.github.io/football-dashboard/">&larr; All Trackers (Dashboard)</a></div>
   <h1>UEFA Champions League 2026-27 Tracker</h1>
-  <div class="updated">Matchday {matchday} · Last updated {updated}</div>
+  <div class="updated">{'Season not yet started' if STALE_SEASON else f'Matchday {matchday}'} · Last updated {updated}</div>
+  {STALE_BANNER}
 
   <div class="tabs">
     <button class="tab-btn active" onclick="showTab('table')">League Table</button>
@@ -325,6 +340,7 @@ html = f"""<!doctype html>
   </div>
 
   <div id="tab-club" class="tab-panel">
+    {STALE_BANNER}
     <div class="explainer">
       <b>New to the Champions League?</b> The table tells you <i>where</i> a team stands, but not <i>how</i> they got there. These stats show the underlying strengths and weaknesses — a team can have a good record while quietly being fragile defensively, or vice versa.
     </div>
@@ -367,6 +383,7 @@ html = f"""<!doctype html>
   </div>
 
   <div id="tab-player" class="tab-panel">
+    {STALE_BANNER}
     <div class="explainer">
       <b>New to the Champions League?</b> There's no single official "Golden Boot" title here the way there is domestically, but the top scorer race is still closely watched. Goals alone don't capture everything a player contributes, though — this table adds context.
     </div>
