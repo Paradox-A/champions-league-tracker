@@ -12,6 +12,59 @@ OUT_PATH = "index.html"
 TOTAL_GAMES = 8  # each club plays 8 league-phase matches
 
 standings_data = json.load(open(STANDINGS_PATH))
+matches_data = json.load(open(MATCHES_PATH))
+
+# football-data.org's /standings endpoint has two failure modes we've seen:
+# (1) it silently falls back to the last completed season's final table when
+#     the new season's fixtures haven't been loaded yet (detected below via
+#     season endDate < today), or (2) once the new season IS loaded but zero
+#     matches have been played, it 404s outright since there's no table to
+#     compute yet. Handle (2) first: fall back to matches.json's season info
+#     and render a minimal "not started" page instead of crashing on a
+#     missing "standings" key.
+NOT_STARTED = "standings" not in standings_data
+if NOT_STARTED:
+    m_season = matches_data["filters"]
+    m_result = matches_data["resultSet"]
+    season_label = f"{m_result['first'][:4]}-{m_result['last'][2:4]}"
+    updated = datetime.now(timezone.utc).strftime("%B %d, %Y %H:%M UTC")
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UEFA Champions League 2026-27 Tracker</title>
+<style>
+  :root {{ --bg: #f6f1e7; --card: #ffffff; --text: #1a1a1a; --muted: #6b6b6b; --border: #e2ddd0; --accent: #0a1a5c; --tab-bg: #eee6d6; }}
+  @media (prefers-color-scheme: dark) {{
+    :root:not([data-theme="light"]) {{ --bg: #16131a; --card: #211d29; --text: #f0ede4; --muted: #a39d8f; --border: #3a3444; --accent: #8fa3f5; --tab-bg: #2a2534; }}
+  }}
+  :root[data-theme="dark"] {{ --bg: #16131a; --card: #211d29; --text: #f0ede4; --muted: #a39d8f; --border: #3a3444; --accent: #8fa3f5; --tab-bg: #2a2534; }}
+  body {{ margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px 16px 60px; }}
+  .wrap {{ max-width: 640px; margin: 60px auto; text-align: center; }}
+  h1 {{ font-size: 1.6rem; color: var(--accent); }}
+  .card {{ background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }}
+  .explainer {{ background: var(--tab-bg); border-radius: 8px; padding: 14px; font-size: 0.9rem; line-height: 1.6; }}
+  .updated {{ color: var(--muted); font-size: 0.8rem; margin-top: 20px; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>UEFA Champions League {season_label} Tracker</h1>
+  <div class="card">
+    <div class="explainer">
+      Real {season_label} fixtures are loaded ({m_result['count']} league-phase matches, {m_result['first']} to {m_result['last']}), but no matches have been played yet, so the data source doesn't have a table to serve. This page will populate automatically with standings, stats, and races once the first matchday ({m_result['first']}) kicks off.
+    </div>
+  </div>
+  <div class="updated">Last checked: {updated}</div>
+</div>
+</body>
+</html>"""
+    with open(OUT_PATH, "w") as f:
+        f.write(html)
+    print(f"Season loaded but not yet started (first match {m_result['first']}) — wrote placeholder page")
+    raise SystemExit(0)
+
 table = standings_data["standings"][0]["table"]
 season = standings_data["season"]
 matchday = season["currentMatchday"]
@@ -31,7 +84,6 @@ if STALE_SEASON:
       ⚠ The 2026-27 Champions League league phase hasn't started yet, and its fixtures aren't loaded into the free data source this tracker uses. Everything below is the final {season_label} table (last completed season), shown for reference only — not current results. This will update automatically once 2026-27 matches are fetched.
     </div>"""
 
-matches_data = json.load(open(MATCHES_PATH))
 finished = [m for m in matches_data["matches"] if m["status"] == "FINISHED"]
 
 scorers_data = json.load(open(SCORERS_PATH))
